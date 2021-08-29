@@ -28,9 +28,6 @@ const (
 	// StateActive 活跃状态
 	StateActive
 
-	// StatePaused 暂停状态
-	StatePaused
-
 	// StateRetry 重试状态
 	StateRetry
 
