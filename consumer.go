@@ -102,6 +102,13 @@ func (c *Consumer) consumeQueue() (*amqp.Channel, []<-chan amqp.Delivery, error)
 		return nil, nil, err
 	}
 
+	// 设置 QoS
+	if c.qos > 0 {
+		if err = channel.Qos(c.qos, 0, false); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	// 消费队列
 	for _, queue := range c.queues {
 		ch, err := channel.Consume(
@@ -266,13 +273,13 @@ func (c *Consumer) Close() {
 		return
 	}
 
+	close(c.clientCloseChan)
+
 	if c.channel != nil {
 		_ = c.channel.Close()
 	}
 
-	close(c.clientCloseChan)
 	c.closeDataChan()
-
 	c.state = StateClosed
 }
 
@@ -294,7 +301,7 @@ func NewConsumer(client *Client, queues []string, options ...ConsumerOption) *Co
 		state:           StateInit,
 	}
 
-	WithConsumerAutoACK()(consumer)
+	WithConsumerAutoTag()(consumer)
 
 	for _, option := range options {
 		option(consumer)
