@@ -26,6 +26,7 @@ type Consumer struct {
 	client          *Client            // 客户端
 	channel         *amqp.Channel      // CHANNEL
 	dataChan        chan amqp.Delivery // 数据通道
+	dataChanWG      *sync.WaitGroup    // 数据通道 WaitGroup
 	serverCloseChan chan *amqp.Error   // 服务器端关闭事件通道
 	clientCloseChan chan struct{}      // 客户端关闭事件通道
 	locker          sync.RWMutex       // 锁
@@ -114,8 +115,7 @@ func (c *Consumer) consumeQueue() (*amqp.Channel, []<-chan amqp.Delivery, error)
 		)
 
 		if err != nil {
-			_ = channel.Cancel(c.tag, false)
-			//_ = channel.Close()
+			_ = channel.Close()
 
 			return nil, nil, err
 		}
@@ -140,8 +140,7 @@ func (c *Consumer) activateConsumer(channel *amqp.Channel, dataChans []<-chan am
 	defer c.locker.Unlock()
 
 	if c.state == StateClosed {
-		_ = channel.Cancel(c.tag, false)
-		//_ = channel.Close()
+		_ = channel.Close()
 
 		return ErrConsumerClosed
 	}
@@ -168,6 +167,10 @@ func (c *Consumer) activateConsumer(channel *amqp.Channel, dataChans []<-chan am
 func (c *Consumer) deliveryData(dataChans []<-chan amqp.Delivery) {
 	for _, ch := range dataChans {
 		go func(ch <-chan amqp.Delivery) {
+			c.dataChanWG.Add(1)
+
+			defer c.dataChanWG.Done()
+
 			for {
 				select {
 				// 客户端关闭
@@ -214,27 +217,6 @@ func (c *Consumer) listenCloseEvent() {
 }
 
 //
-// AddQueue
-// @desc 添加消费队列
-// @receiver c *Consumer
-// @param queue string
-// @return error
-//
-func (c *Consumer) AddQueue(queue string) error {
-	c.locker.Lock()
-
-	defer c.locker.Unlock()
-
-	if c.state != StateInit {
-		return ErrConsumerNotInit
-	}
-
-	c.queues = append(c.queues, queue)
-
-	return nil
-}
-
-//
 // DataChan
 // @desc 获取数据传输通道
 // @receiver c *Consumer
@@ -242,6 +224,17 @@ func (c *Consumer) AddQueue(queue string) error {
 //
 func (c *Consumer) DataChan() <-chan amqp.Delivery {
 	return c.dataChan
+}
+
+//
+// closeDataChan
+// @desc 关闭数据通道
+// @receiver c *Consumer
+//
+func (c *Consumer) closeDataChan() {
+	c.dataChanWG.Wait()
+
+	close(c.dataChan)
 }
 
 //
@@ -274,12 +267,11 @@ func (c *Consumer) Close() {
 	}
 
 	if c.channel != nil {
-		_ = c.channel.Cancel(c.tag, false)
-		//_ = c.channel.Close()
+		_ = c.channel.Close()
 	}
 
 	close(c.clientCloseChan)
-	close(c.dataChan)
+	c.closeDataChan()
 
 	c.state = StateClosed
 }
@@ -288,18 +280,21 @@ func (c *Consumer) Close() {
 // NewConsumer
 // @desc 创建消费者
 // @param client *Client
-// @param queue string
+// @param queues []string
 // @param options []ConsumerOption
 // @return *Consumer
 //
-func NewConsumer(client *Client, queue string, options ...ConsumerOption) *Consumer {
+func NewConsumer(client *Client, queues []string, options ...ConsumerOption) *Consumer {
 	consumer := &Consumer{
-		queues:          []string{queue},
+		queues:          queues,
 		client:          client,
 		dataChan:        make(chan amqp.Delivery),
+		dataChanWG:      new(sync.WaitGroup),
 		clientCloseChan: make(chan struct{}),
 		state:           StateInit,
 	}
+
+	WithConsumerAutoACK()(consumer)
 
 	for _, option := range options {
 		option(consumer)
