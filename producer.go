@@ -69,6 +69,70 @@ func (p *Producer) PublishFullData(data amqp.Publishing, routingKeys ...string) 
 }
 
 //
+// PublishMulti
+// @desc 批量发布
+// @receiver p *Producer
+// @param bodies [][]byte
+// @param routingKeys []string
+// @return error
+//
+func (p *Producer) PublishMulti(bodies [][]byte, routingKeys ...string) error {
+	var data []amqp.Publishing
+
+	for _, body := range bodies {
+		item := p.template
+		item.Body = body
+
+		data = append(data, item)
+	}
+
+	return p.PublishFullDataMulti(data, routingKeys...)
+}
+
+//
+// PublishFullDataMulti
+// @desc 批量发布独立数据
+// @receiver p *Producer
+// @param data []amqp.Publishing
+// @param routingKeys []string
+// @return error
+//
+func (p *Producer) PublishFullDataMulti(data []amqp.Publishing, routingKeys ...string) error {
+	var err error
+	var channel *amqp.Channel
+
+	if channel, err = p.client.Channel(); err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = channel.Close()
+	}()
+
+	routingKey := p.routingKey
+
+	if len(routingKeys) > 0 && len(routingKeys[0]) > 0 {
+		routingKey = routingKeys[0]
+	}
+
+	for _, item := range data {
+		err = channel.Publish(
+			p.exchange,
+			routingKey,
+			p.mandatory,
+			p.immediate,
+			item,
+		)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+//
 // NewProducer
 // @desc 创建生产者
 // @param client *Client
