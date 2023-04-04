@@ -15,7 +15,7 @@ type ConsumerOption func(*Consumer)
 // Consumer 消费者
 type Consumer struct {
 	queues    []string
-	tag       string // 消费者标签
+	tags      []string // 消费者标签
 	qos       int
 	autoACK   bool
 	exclusive bool
@@ -110,10 +110,10 @@ func (c *Consumer) consumeQueue() (*amqp.Channel, []<-chan amqp.Delivery, error)
 	}
 
 	// 消费队列
-	for _, queue := range c.queues {
+	for index, queue := range c.queues {
 		ch, err := channel.Consume(
 			queue,
-			c.tag,
+			c.tags[index],
 			c.autoACK,
 			c.exclusive,
 			c.noLocal,
@@ -313,12 +313,12 @@ func NewConsumer(client *Client, queues []string, options ...ConsumerOption) *Co
 //
 // WithConsumerTag
 // @desc 配置消费者标签
-// @param tag string
+// @param tags string
 // @return ConsumerOption
 //
-func WithConsumerTag(tag string) ConsumerOption {
+func WithConsumerTag(tags ...string) ConsumerOption {
 	return func(consumer *Consumer) {
-		consumer.tag = tag
+		consumer.tags = tags
 	}
 }
 
@@ -332,9 +332,15 @@ func WithConsumerAutoTag() ConsumerOption {
 		hostname, _ := os.Hostname()
 		processId := os.Getpid()
 
-		tag := fmt.Sprintf("[%s]-[pid-%d]@%s", strings.Join(c.queues, "|"), processId, hostname)
+		prefix := fmt.Sprintf("[%s]-[pid-%d]@%s", strings.Join(c.queues, "|"), processId, hostname)
 
-		WithConsumerTag(tag)(c)
+		var tags []string
+
+		for index := range c.queues {
+			tags = append(tags, fmt.Sprintf("%s-%d", prefix, index))
+		}
+
+		WithConsumerTag(tags...)(c)
 	}
 }
 
