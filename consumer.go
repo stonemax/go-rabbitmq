@@ -105,6 +105,8 @@ func (c *Consumer) consumeQueue() (*amqp.Channel, []<-chan amqp.Delivery, error)
 	// 设置 QoS
 	if c.qos > 0 {
 		if err = channel.Qos(c.qos, 0, false); err != nil {
+			_ = channel.Close()
+
 			return nil, nil, err
 		}
 	}
