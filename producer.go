@@ -45,13 +45,13 @@ func (p *Producer) Publish(body []byte, routingKeys ...string) error {
 func (p *Producer) PublishFullData(data amqp.Publishing, routingKeys ...string) error {
 	channel, err := p.client.Channel()
 
-	defer func() {
-		_ = channel.Close()
-	}()
-
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		_ = channel.Close()
+	}()
 
 	routingKey := p.routingKey
 
